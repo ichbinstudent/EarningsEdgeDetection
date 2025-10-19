@@ -9,10 +9,12 @@ import logging
 import sys
 import time
 from datetime import datetime, timezone
-
 from utils.logging_utils import setup_logging
 from core.scanner import EarningsScanner
 from utils.discord_webhook import send_webhook
+
+from dotenv import load_dotenv
+load_dotenv()
 
 def main():
     parser = argparse.ArgumentParser(
@@ -195,6 +197,12 @@ def main():
                             m = stock_metrics[tick]
                             print(f'\n  {tick}:')
                             print(f'    Price: ${m["price"]:.2f}')
+                            if 'sigma_baseline_1y' in m:
+                                print(f'    1Y ATM IV (Baseline): {m["sigma_baseline_1y"]:.4f}')
+                            if 'sigma_short_leg_fair' in m:
+                                print(f'    Fair IV (Short Leg): {m["sigma_short_leg_fair"]:.4f}')
+                            if 'sigma_short_leg' in m:
+                                print(f'    Actual IV (Short Leg): {m["sigma_short_leg"]:.4f}')
                             print(f'    Volume: {m["volume"]:,.0f}')
                             print(f'    Winrate: {m["win_rate"]:.1f}% '
                                   f'over the last {m["win_quarters"]} earnings')
@@ -231,6 +239,12 @@ def main():
                             m = stock_metrics[tick]
                             print(f'\n  {tick}:')
                             print(f'    Price: ${m["price"]:.2f}')
+                            if 'sigma_baseline_1y' in m:
+                                print(f'    1Y ATM IV (Baseline): {m["sigma_baseline_1y"]:.4f}')
+                            if 'sigma_short_leg_fair' in m:
+                                print(f'    Fair IV (Short Leg): {m["sigma_short_leg_fair"]:.4f}')
+                            if 'sigma_short_leg' in m:
+                                print(f'    Actual IV (Short Leg): {m["sigma_short_leg"]:.4f}')
                             print(f'    Volume: {m["volume"]:,.0f}')
                             print(f'    Winrate: {m["win_rate"]:.1f}% '
                                   f'over the last {m["win_quarters"]} earnings')

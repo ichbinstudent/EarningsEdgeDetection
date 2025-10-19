@@ -5,7 +5,7 @@ Handles volatility calculations and options chain analysis.
 
 import logging
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -114,7 +114,7 @@ class OptionsAnalyzer:
             warnings.warn(f"Error in term structure calculation: {str(e)}")
             return lambda x: np.nan
 
-    def compute_recommendation(self, ticker: str) -> Dict:
+    def compute_recommendation(self, ticker: str, earnings_date: Optional[date] = None) -> Dict:
         """Analyze options and compute trading recommendation."""
         try:
             ticker = ticker.strip().upper()
@@ -138,6 +138,8 @@ class OptionsAnalyzer:
             atm_ivs = {}
             straddle = None
             first_chain = True
+            atm_call_delta = None
+            atm_put_delta = None
 
             for exp_date, chain in options_chains.items():
                 calls, puts = chain.calls, chain.puts
@@ -146,7 +148,7 @@ class OptionsAnalyzer:
 
                 call_idx = (calls['strike'] - current_price).abs().idxmin()
                 put_idx = (puts['strike'] - current_price).abs().idxmin()
-                
+
                 call_iv = calls.loc[call_idx, 'impliedVolatility']
                 put_iv = puts.loc[put_idx, 'impliedVolatility']
                 atm_iv = (call_iv + put_iv) / 2.0
@@ -157,11 +159,11 @@ class OptionsAnalyzer:
                     call_mid = (calls.loc[call_idx, 'bid'] + calls.loc[call_idx, 'ask']) / 2
                     put_mid = (puts.loc[put_idx, 'bid'] + puts.loc[put_idx, 'ask']) / 2
                     straddle = call_mid + put_mid
-                    
+
                     # Get ATM deltas if available
                     atm_call_delta = calls.loc[call_idx, 'delta'] if 'delta' in calls.columns else None
                     atm_put_delta = puts.loc[put_idx, 'delta'] if 'delta' in puts.columns else None
-                    
+
                     first_chain = False
 
             if not atm_ivs:
@@ -169,22 +171,47 @@ class OptionsAnalyzer:
 
             # Build term structure
             today = datetime.today().date()
-            dtes = [(datetime.strptime(exp, "%Y-%m-%d").date() - today).days 
-                   for exp in atm_ivs.keys()]
+            dtes = [(datetime.strptime(exp, "%Y-%m-%d").date() - today).days for exp in atm_ivs.keys()]
             ivs = list(atm_ivs.values())
-            
+
             term_spline = self.build_term_structure(dtes, ivs)
-            iv30 = term_spline(30)
+            iv30 = term_spline(45)
             slope = (term_spline(45) - term_spline(min(dtes))) / (45 - min(dtes))
+
+            # Find the ATM IV for the expiry closest to 365 days (1 year)
+            target_days = 365
+            # Calculate days to earnings date for short leg
+            if earnings_date:
+                today = datetime.today().date()
+                short_leg_days = (earnings_date - today).days
+                # Ensure we have at least 1 day and not more than 45 days (our filter limit)
+                short_leg_days = max(1, min(short_leg_days, 45))
+            else:
+                short_leg_days = 4  # fallback to hardcoded value
+            if dtes:
+                idx_1y = min(range(len(dtes)), key=lambda i: abs(dtes[i] - target_days))
+                sigma_baseline = ivs[idx_1y]
+                T_30 = 30
+                T_short = short_leg_days
+                sigma_30 = iv30
+                # Fair sigma calculation
+                sigma_short_leg_fair = np.sqrt((sigma_30**2 * T_30 - sigma_baseline**2 * (T_30 - T_short)) / T_short)
+                # Actual IV of short leg
+                idx_short = min(range(len(dtes)), key=lambda i: abs(dtes[i] - short_leg_days))
+                sigma_short_leg = ivs[idx_short]
+            else:
+                sigma_baseline = None
+                sigma_short_leg_fair = None
+                sigma_short_leg = None
 
             # Calculate historical volatility
             hist_data = stock.history(period='3mo')
             hist_vol = self.yang_zhang_volatility(hist_data)
-            
+
             # Get volume data
             avg_volume = hist_data['Volume'].rolling(30).mean().dropna().iloc[-1]
 
-            # Check if we have deltas to return
+            # Prepare result
             result_dict = {
                 'avg_volume': avg_volume >= 1_500_000,
                 'iv30_rv30': iv30 / hist_vol if hist_vol > 0 else 9999,
@@ -194,14 +221,22 @@ class OptionsAnalyzer:
                 'expected_move': f"{(straddle/current_price*100):.2f}%" if straddle else "N/A",
                 'current_price': current_price,
                 'ticker': ticker,
-                'recommendation': 'BUY' if iv30 < hist_vol and avg_volume >= 1_500_000 else 'SELL' if iv30 > hist_vol * 1.2 else 'HOLD'
+                'recommendation': 'BUY' if iv30 < hist_vol and avg_volume >= 1_500_000 else 'SELL' if iv30 > hist_vol * 1.2 else 'HOLD',
             }
             
+            # Add sigma values if they are valid
+            if sigma_baseline is not None:
+                result_dict['sigma_baseline_1y'] = sigma_baseline
+            if sigma_short_leg_fair is not None and not np.isnan(sigma_short_leg_fair):
+                result_dict['sigma_short_leg_fair'] = sigma_short_leg_fair
+            if sigma_short_leg is not None:
+                result_dict['sigma_short_leg'] = sigma_short_leg
+
             # Add ATM deltas if available
-            if 'atm_call_delta' in locals() and 'atm_put_delta' in locals() and atm_call_delta is not None and atm_put_delta is not None:
+            if atm_call_delta is not None and atm_put_delta is not None:
                 result_dict['atm_call_delta'] = atm_call_delta
                 result_dict['atm_put_delta'] = atm_put_delta
-            
+
             return result_dict
         except Exception as e:
             logger.error(f"Error analyzing {ticker}: {str(e)}")

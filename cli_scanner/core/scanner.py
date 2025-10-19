@@ -5,7 +5,7 @@ Earnings scanner that handles date logic and filtering.
 import logging
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import List, Dict, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
 
@@ -783,7 +783,7 @@ class EarningsScanner:
             logger.error(f"Failed to get MC data for {ticker} after {self._max_retries} attempts")
             return default_result
 
-    def validate_stock(self, stock: Dict) -> Dict:
+    def validate_stock(self, stock: Dict, earnings_date: Optional[date] = None) -> Dict:
         ticker = stock['ticker']
         analysis = None
         failed_checks = []
@@ -843,8 +843,9 @@ class EarningsScanner:
             })
             
             # Mandatory check: core analysis
-            analysis = self.analyzer.compute_recommendation(ticker)
-                
+            earnings_date = stock.get('earnings_date')
+            analysis = self.analyzer.compute_recommendation(ticker, earnings_date)
+
             if "error" in analysis:
                 return {
                     'pass': False,
@@ -852,7 +853,15 @@ class EarningsScanner:
                     'reason': f"Analysis error - {analysis['error']}",
                     'metrics': {}
                 }
-            
+
+            # Always include sigma_baseline_1y, sigma_short_leg, and sigma_short_leg if present
+            if 'sigma_baseline_1y' in analysis:
+                metrics['sigma_baseline_1y'] = analysis['sigma_baseline_1y']
+            if 'sigma_short_leg' in analysis:
+                metrics['sigma_short_leg'] = analysis['sigma_short_leg']
+            if 'sigma_short_leg_fair' in analysis:
+                metrics['sigma_short_leg_fair'] = analysis['sigma_short_leg_fair']
+
             # Term structure check (immediate exit - this is a hard filter)
             term_slope = analysis.get('term_slope', 0)
             metrics['term_structure'] = term_slope
@@ -1108,7 +1117,9 @@ class EarningsScanner:
             self.adjust_thresholds_based_on_spy()
             
             # Run all validation checks on this stock
-            result = self.validate_stock(stock)
+            earnings_date_str = stock.get('earnings_date')
+            earnings_date = datetime.strptime(earnings_date_str, '%Y-%m-%d').date() if earnings_date_str else None
+            result = self.validate_stock(stock, earnings_date)
             
             # Get all available metrics
             metrics = result.get('metrics', {}) if 'metrics' in result else {}
@@ -1200,9 +1211,9 @@ class EarningsScanner:
             
         # Initialize candidates list properly - outside of the try block
         candidates = []
-        # Filter candidates (using list comprehensions for speed)
-        candidates = [s for s in post_stocks if s['timing'] == 'Post Market'] + \
-                     [s for s in pre_stocks if s['timing'] == 'Pre Market']
+        # Filter candidates and add earnings date (using list comprehensions for speed)
+        candidates = [{**s, 'earnings_date': post_date} for s in post_stocks if s['timing'] == 'Post Market'] + \
+                     [{**s, 'earnings_date': pre_date} for s in pre_stocks if s['timing'] == 'Pre Market']
         
         logger.info(f"Found {len(candidates)} initial candidates")
         
@@ -1218,7 +1229,11 @@ class EarningsScanner:
             
             with ThreadPoolExecutor(max_workers=effective_workers) as executor:
                 # Submit all stocks for processing
-                futures = [executor.submit(self.validate_stock, stock) for stock in candidates]
+                futures = []
+                for stock in candidates:
+                    earnings_date_str = stock.get('earnings_date')
+                    earnings_date = earnings_date_str if earnings_date_str else None
+                    futures.append(executor.submit(self.validate_stock, stock, earnings_date))
                 
                 # Process results as they complete
                 with tqdm(total=len(candidates), desc="Analyzing stocks") as pbar:
@@ -1246,7 +1261,9 @@ class EarningsScanner:
             with tqdm(total=len(candidates), desc="Analyzing stocks") as pbar:
                 for batch in batches:
                     for stock in batch:
-                        result = self.validate_stock(stock)
+                        earnings_date_str = stock.get('earnings_date')
+                        earnings_date = earnings_date_str if earnings_date_str else None
+                        result = self.validate_stock(stock, earnings_date)
                         ticker = stock['ticker']
                         
                         if result['pass']:
