@@ -206,6 +206,8 @@ def main():
                                 print(f'    Fair IV (Short Leg): {m["sigma_short_leg_fair"]:.4f}')
                             if 'sigma_short_leg' in m:
                                 print(f'    Actual IV (Short Leg): {m["sigma_short_leg"]:.4f}')
+                            if 'actual_to_fair_ratio' in m:
+                                print(f'    Actual to Fair Ratio: {m["actual_to_fair_ratio"]:.2f}%')
                             print(f'    Volume: {m["volume"]:,.0f}')
                             print(f'    Winrate: {m["win_rate"]:.1f}% '
                                   f'over the last {m["win_quarters"]} earnings')

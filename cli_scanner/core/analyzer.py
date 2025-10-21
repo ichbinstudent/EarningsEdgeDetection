@@ -246,11 +246,13 @@ class OptionsAnalyzer:
                 # Actual IV of short leg for mid, bid, and ask
                 idx_short = min(range(len(dtes)), key=lambda i: abs(dtes[i] - short_leg_days))
                 sigma_short_leg_bid = ivs_bid[idx_short]
+
+                actual_to_fair_ratio =  ((sigma_short_leg_bid / sigma_short_leg_fair) - 1) * 100 if sigma_short_leg_fair else np.nan
             else:
                 sigma_baseline_mid = None
                 sigma_short_leg_fair = None
                 sigma_short_leg_bid = None
-                # long_leg_ask_price = None
+                actual_to_fair_ratio = None
 
             # Calculate historical volatility
             hist_data = stock.history(period='3mo')
@@ -279,6 +281,8 @@ class OptionsAnalyzer:
                 result_dict['sigma_short_leg_fair'] = sigma_short_leg_fair
             if sigma_short_leg_bid is not None:
                 result_dict['sigma_short_leg'] = sigma_short_leg_bid
+            if actual_to_fair_ratio is not None:
+                result_dict['actual_to_fair_ratio'] = actual_to_fair_ratio
 
             # Add ATM deltas if available
             if atm_call_delta is not None and atm_put_delta is not None:

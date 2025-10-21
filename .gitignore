@@ -26,3 +26,4 @@ Thumbs.db
  
 # Generated files
 recommended_*.txt
+cli_scanner/.env
