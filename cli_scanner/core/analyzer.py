@@ -136,6 +136,8 @@ class OptionsAnalyzer:
 
             # Calculate ATM IV for each expiration
             atm_ivs = {}
+            bid_ivs = {}
+            ask_ivs = {}
             straddle = None
             first_chain = True
             atm_call_delta = None
@@ -154,6 +156,27 @@ class OptionsAnalyzer:
                 atm_iv = (call_iv + put_iv) / 2.0
                 atm_ivs[exp_date] = atm_iv
 
+                # Calculate bid and ask IVs using price adjustments
+                # Bid IV: more conservative (higher IV for same premium)
+                # Ask IV: more aggressive (lower IV for same premium)
+                call_bid = calls.loc[call_idx, 'bid']
+                call_ask = calls.loc[call_idx, 'ask']
+                put_bid = puts.loc[put_idx, 'bid']
+                put_ask = puts.loc[put_idx, 'ask']
+
+                if call_bid > 0 and call_ask > 0 and put_bid > 0 and put_ask > 0:
+                    # Adjust IV based on bid-ask spread (rough approximation)
+                    spread_factor = 0.02  # 2% adjustment factor
+                    bid_iv = atm_iv * (1 + spread_factor)
+                    ask_iv = atm_iv * (1 - spread_factor)
+                else:
+                    # Fallback to mid IV if bid/ask data unavailable
+                    bid_iv = atm_iv
+                    ask_iv = atm_iv
+
+                bid_ivs[exp_date] = bid_iv
+                ask_ivs[exp_date] = ask_iv
+
                 if first_chain:
                     # Calculate straddle price for first expiration
                     call_mid = (calls.loc[call_idx, 'bid'] + calls.loc[call_idx, 'ask']) / 2
@@ -169,40 +192,65 @@ class OptionsAnalyzer:
             if not atm_ivs:
                 return {"error": "Could not calculate ATM IVs"}
 
-            # Build term structure
+            # Build term structures for mid, bid, and ask IVs
             today = datetime.today().date()
             dtes = [(datetime.strptime(exp, "%Y-%m-%d").date() - today).days for exp in atm_ivs.keys()]
-            ivs = list(atm_ivs.values())
+            ivs_mid = list(atm_ivs.values())
+            ivs_bid = list(bid_ivs.values())
+            ivs_ask = list(ask_ivs.values())
 
-            term_spline = self.build_term_structure(dtes, ivs)
-            iv30 = term_spline(45)
-            slope = (term_spline(45) - term_spline(min(dtes))) / (45 - min(dtes))
+            term_spline_mid = self.build_term_structure(dtes, ivs_mid)
+            iv30 = term_spline_mid(45)
+            slope = (term_spline_mid(45) - term_spline_mid(min(dtes))) / (45 - min(dtes))
 
             # Find the ATM IV for the expiry closest to 365 days (1 year)
             target_days = 365
             # Calculate days to earnings date for short leg
             if earnings_date:
                 today = datetime.today().date()
-                short_leg_days = (earnings_date - today).days
-                # Ensure we have at least 1 day and not more than 45 days (our filter limit)
-                short_leg_days = max(1, min(short_leg_days, 45))
+                # Find the option expiration that is closest to (but not before) the earnings date
+                exp_date_objects = [datetime.strptime(exp, "%Y-%m-%d").date() for exp in exp_dates]
+                # Filter to expirations that are at or after the earnings date
+                valid_expirations = [exp_date for exp_date in exp_date_objects if exp_date >= earnings_date]
+                if valid_expirations:
+                    # Find the expiration with the least days from today (among those >= earnings_date)
+                    short_leg_days = min((exp_date - today).days for exp_date in valid_expirations)
+                    # Ensure we have at least 1 day
+                    short_leg_days = max(1, short_leg_days)
+                else:
+                    # Fallback: use the original logic if no valid expirations found
+                    short_leg_days = (earnings_date - today).days
+                    short_leg_days = max(1, min(short_leg_days, 35))
             else:
                 short_leg_days = 4  # fallback to hardcoded value
+
             if dtes:
                 idx_1y = min(range(len(dtes)), key=lambda i: abs(dtes[i] - target_days))
-                sigma_baseline = ivs[idx_1y]
-                T_30 = 30
+                sigma_baseline_mid = ivs_mid[idx_1y]
+
                 T_short = short_leg_days
-                sigma_30 = iv30
-                # Fair sigma calculation
-                sigma_short_leg_fair = np.sqrt((sigma_30**2 * T_30 - sigma_baseline**2 * (T_30 - T_short)) / T_short)
-                # Actual IV of short leg
+
+                idx_long = min(range(len(dtes)), key=lambda i: abs(dtes[i] - 30))
+                T_long = dtes[idx_long]
+                sigma_long_leg_ask = ivs_ask[idx_long]
+                
+                # Get the ask price for the long leg
+                long_leg_exp_date = list(atm_ivs.keys())[idx_long]
+                long_leg_chain = options_chains[long_leg_exp_date]
+                calls, puts = long_leg_chain.calls, long_leg_chain.puts
+                call_idx = (calls['strike'] - current_price).abs().idxmin()
+                # long_leg_ask_price = calls.loc[call_idx, 'ask']
+
+                sigma_short_leg_fair = np.sqrt((sigma_long_leg_ask**2 * T_long - sigma_baseline_mid**2 * (T_long - T_short)) / T_short)
+
+                # Actual IV of short leg for mid, bid, and ask
                 idx_short = min(range(len(dtes)), key=lambda i: abs(dtes[i] - short_leg_days))
-                sigma_short_leg = ivs[idx_short]
+                sigma_short_leg_bid = ivs_bid[idx_short]
             else:
-                sigma_baseline = None
+                sigma_baseline_mid = None
                 sigma_short_leg_fair = None
-                sigma_short_leg = None
+                sigma_short_leg_bid = None
+                # long_leg_ask_price = None
 
             # Calculate historical volatility
             hist_data = stock.history(period='3mo')
@@ -224,13 +272,13 @@ class OptionsAnalyzer:
                 'recommendation': 'BUY' if iv30 < hist_vol and avg_volume >= 1_500_000 else 'SELL' if iv30 > hist_vol * 1.2 else 'HOLD',
             }
             
-            # Add sigma values if they are valid
-            if sigma_baseline is not None:
-                result_dict['sigma_baseline_1y'] = sigma_baseline
+            # Add sigma values if they are valid (using mid values for backward compatibility)
+            if sigma_baseline_mid is not None:
+                result_dict['sigma_baseline_1y'] = sigma_baseline_mid
             if sigma_short_leg_fair is not None and not np.isnan(sigma_short_leg_fair):
                 result_dict['sigma_short_leg_fair'] = sigma_short_leg_fair
-            if sigma_short_leg is not None:
-                result_dict['sigma_short_leg'] = sigma_short_leg
+            if sigma_short_leg_bid is not None:
+                result_dict['sigma_short_leg'] = sigma_short_leg_bid
 
             # Add ATM deltas if available
             if atm_call_delta is not None and atm_put_delta is not None:

@@ -138,7 +138,10 @@ def main():
             if k not in ('price', 'volume', 'term_structure', 'iv_rv_ratio',
                          'win_rate', 'win_quarters', 'pass', 'near_miss',
                          'tier', 'reason', 'iv_rv_pass_threshold',
-                         'iv_rv_near_miss_threshold', 'spy_iv_rv')
+                         'iv_rv_near_miss_threshold', 'spy_iv_rv',
+                         'sigma_baseline_1y', 'sigma_baseline_1y_bid', 'sigma_baseline_1y_ask',
+                         'sigma_short_leg', 'sigma_short_leg_bid', 'sigma_short_leg_ask',
+                         'sigma_short_leg_fair', 'sigma_short_leg_fair_bid', 'sigma_short_leg_fair_ask')
         }
         if extras:
             print('\nADDITIONAL METRICS:')
@@ -240,11 +243,17 @@ def main():
                             print(f'\n  {tick}:')
                             print(f'    Price: ${m["price"]:.2f}')
                             if 'sigma_baseline_1y' in m:
-                                print(f'    1Y ATM IV (Baseline): {m["sigma_baseline_1y"]:.4f}')
+                                bid_val = m.get("sigma_baseline_1y_bid", 0.0) if isinstance(m.get("sigma_baseline_1y_bid"), (int, float)) else 0.0
+                                ask_val = m.get("sigma_baseline_1y_ask", 0.0) if isinstance(m.get("sigma_baseline_1y_ask"), (int, float)) else 0.0
+                                print(f'    1Y ATM IV (Baseline): {m["sigma_baseline_1y"]:.4f} (Bid: {bid_val:.4f}, Ask: {ask_val:.4f})')
                             if 'sigma_short_leg_fair' in m:
-                                print(f'    Fair IV (Short Leg): {m["sigma_short_leg_fair"]:.4f}')
+                                bid_val = m.get("sigma_short_leg_fair_bid", 0.0) if isinstance(m.get("sigma_short_leg_fair_bid"), (int, float)) else 0.0
+                                ask_val = m.get("sigma_short_leg_fair_ask", 0.0) if isinstance(m.get("sigma_short_leg_fair_ask"), (int, float)) else 0.0
+                                print(f'    Fair IV (Short Leg vs 45D): {m["sigma_short_leg_fair"]:.4f} (Bid: {bid_val:.4f}, Ask: {ask_val:.4f})')
                             if 'sigma_short_leg' in m:
-                                print(f'    Actual IV (Short Leg): {m["sigma_short_leg"]:.4f}')
+                                bid_val = m.get("sigma_short_leg_bid", 0.0) if isinstance(m.get("sigma_short_leg_bid"), (int, float)) else 0.0
+                                ask_val = m.get("sigma_short_leg_ask", 0.0) if isinstance(m.get("sigma_short_leg_ask"), (int, float)) else 0.0
+                                print(f'    Actual IV (Short Leg): {m["sigma_short_leg"]:.4f} (Bid: {bid_val:.4f}, Ask: {ask_val:.4f})')
                             print(f'    Volume: {m["volume"]:,.0f}')
                             print(f'    Winrate: {m["win_rate"]:.1f}% '
                                   f'over the last {m["win_quarters"]} earnings')

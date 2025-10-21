@@ -7,6 +7,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+LOG_LEVEL = logging.INFO
+logging.basicConfig(level=LOG_LEVEL)
+
 def setup_logging(log_dir: str = "logs") -> None:
     """
     Configure logging to both file and console with rotation.

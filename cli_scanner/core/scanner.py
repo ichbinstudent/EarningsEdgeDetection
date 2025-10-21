@@ -857,10 +857,16 @@ class EarningsScanner:
             # Always include sigma_baseline_1y, sigma_short_leg, and sigma_short_leg if present
             if 'sigma_baseline_1y' in analysis:
                 metrics['sigma_baseline_1y'] = analysis['sigma_baseline_1y']
+                metrics['sigma_baseline_1y_bid'] = analysis.get('sigma_baseline_1y_bid', analysis['sigma_baseline_1y'])
+                metrics['sigma_baseline_1y_ask'] = analysis.get('sigma_baseline_1y_ask', analysis['sigma_baseline_1y'])
             if 'sigma_short_leg' in analysis:
                 metrics['sigma_short_leg'] = analysis['sigma_short_leg']
+                metrics['sigma_short_leg_bid'] = analysis.get('sigma_short_leg_bid', analysis['sigma_short_leg'])
+                metrics['sigma_short_leg_ask'] = analysis.get('sigma_short_leg_ask', analysis['sigma_short_leg'])
             if 'sigma_short_leg_fair' in analysis:
                 metrics['sigma_short_leg_fair'] = analysis['sigma_short_leg_fair']
+                metrics['sigma_short_leg_fair_bid'] = analysis.get('sigma_short_leg_fair_bid', analysis['sigma_short_leg_fair'])
+                metrics['sigma_short_leg_fair_ask'] = analysis.get('sigma_short_leg_fair_ask', analysis['sigma_short_leg_fair'])
 
             # Term structure check (immediate exit - this is a hard filter)
             term_slope = analysis.get('term_slope', 0)
