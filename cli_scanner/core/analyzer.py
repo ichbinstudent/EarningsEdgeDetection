@@ -13,6 +13,10 @@ import pandas as pd
 import yfinance as yf
 from scipy.interpolate import interp1d
 
+from scipy.stats import norm
+from scipy.optimize import brentq
+
+
 # Setup logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -142,6 +146,12 @@ class OptionsAnalyzer:
             first_chain = True
             atm_call_delta = None
             atm_put_delta = None
+            today = datetime.today().date()
+
+            # Calculate historical volatility
+            hist_data = stock.history(period='3mo')
+            hist_vol = self.yang_zhang_volatility(hist_data)
+            hist_vol_1y = self.yang_zhang_volatility(stock.history(period='1y'))
 
             for exp_date, chain in options_chains.items():
                 calls, puts = chain.calls, chain.puts
@@ -166,11 +176,25 @@ class OptionsAnalyzer:
 
                 if call_bid > 0 and call_ask > 0 and put_bid > 0 and put_ask > 0:
                     # Adjust IV based on bid-ask spread (rough approximation)
-                    spread_factor = 0.02  # 2% adjustment factor
-                    bid_iv = atm_iv * (1 + spread_factor)
-                    ask_iv = atm_iv * (1 - spread_factor)
+                    bid_iv = implied_volatility(
+                        market_price=call_bid,
+                        S=current_price,
+                        K=calls.loc[call_idx, 'strike'],
+                        T=(datetime.strptime(exp_date, "%Y-%m-%d").date() - today).days / 365,
+                        r=0.04,
+                        option_type='call'
+                    )
+                    ask_iv = implied_volatility(
+                        market_price=call_ask,
+                        S=current_price,
+                        K=calls.loc[call_idx, 'strike'],
+                        T=(datetime.strptime(exp_date, "%Y-%m-%d").date() - today).days / 365,
+                        r=0.04,
+                        option_type='call'
+                    )
                 else:
                     # Fallback to mid IV if bid/ask data unavailable
+                    raise Exception("Bid/ask data unavailable")
                     bid_iv = atm_iv
                     ask_iv = atm_iv
 
@@ -193,7 +217,6 @@ class OptionsAnalyzer:
                 return {"error": "Could not calculate ATM IVs"}
 
             # Build term structures for mid, bid, and ask IVs
-            today = datetime.today().date()
             dtes = [(datetime.strptime(exp, "%Y-%m-%d").date() - today).days for exp in atm_ivs.keys()]
             ivs_mid = list(atm_ivs.values())
             ivs_bid = list(bid_ivs.values())
@@ -225,8 +248,8 @@ class OptionsAnalyzer:
                 short_leg_days = 4  # fallback to hardcoded value
 
             if dtes:
-                idx_1y = min(range(len(dtes)), key=lambda i: abs(dtes[i] - target_days))
-                sigma_baseline_mid = ivs_mid[idx_1y]
+                # idx_1y = min(range(len(dtes)), key=lambda i: abs(dtes[i] - target_days))
+                sigma_baseline_mid = min(ivs_mid) # TODO: ivs_mid[idx_1y]
 
                 T_short = short_leg_days
 
@@ -234,13 +257,6 @@ class OptionsAnalyzer:
                 T_long = dtes[idx_long]
                 sigma_long_leg_ask = ivs_ask[idx_long]
                 
-                # Get the ask price for the long leg
-                long_leg_exp_date = list(atm_ivs.keys())[idx_long]
-                long_leg_chain = options_chains[long_leg_exp_date]
-                calls, puts = long_leg_chain.calls, long_leg_chain.puts
-                call_idx = (calls['strike'] - current_price).abs().idxmin()
-                # long_leg_ask_price = calls.loc[call_idx, 'ask']
-
                 sigma_short_leg_fair = np.sqrt((sigma_long_leg_ask**2 * T_long - sigma_baseline_mid**2 * (T_long - T_short)) / T_short)
 
                 # Actual IV of short leg for mid, bid, and ask
@@ -253,10 +269,6 @@ class OptionsAnalyzer:
                 sigma_short_leg_fair = None
                 sigma_short_leg_bid = None
                 actual_to_fair_ratio = None
-
-            # Calculate historical volatility
-            hist_data = stock.history(period='3mo')
-            hist_vol = self.yang_zhang_volatility(hist_data)
 
             # Get volume data
             avg_volume = hist_data['Volume'].rolling(30).mean().dropna().iloc[-1]
@@ -297,3 +309,115 @@ class OptionsAnalyzer:
                 "ticker": ticker if 'ticker' in locals() else "UNKNOWN",
                 "status": "ERROR"
             }
+
+
+def black_scholes_price(S, K, T, r, sigma, option_type='call', q=0):
+    """
+    Calculates the price of a European option using the Black-Scholes-Merton model.
+
+    Parameters:
+    S (float): Current stock price
+    K (float): Option strike price
+    T (float): Time to expiration (in years)
+    r (float): Risk-free interest rate (annual)
+    sigma (float): Volatility (annual)
+    option_type (str): 'call' or 'put'
+    q (float): Annual dividend yield (default=0)
+
+    Returns:
+    float: The theoretical price of the option
+    """
+    
+    # Ensure T and sigma are positive
+    if T <= 0 or sigma <= 0:
+        # Return intrinsic value if expired
+        if T == 0:
+            if option_type == 'call':
+                return max(0.0, S - K)
+            else:
+                return max(0.0, K - S)
+        return np.nan # Invalid input
+
+    d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+
+    if option_type.lower() == 'call':
+        price = (S * np.exp(-q * T) * norm.cdf(d1)) - (K * np.exp(-r * T) * norm.cdf(d2))
+    elif option_type.lower() == 'put':
+        price = (K * np.exp(-r * T) * norm.cdf(-d2)) - (S * np.exp(-q * T) * norm.cdf(-d1))
+    else:
+        raise ValueError("Option type must be 'call' or 'put'.")
+
+    return price
+
+def implied_volatility(market_price, S, K, T, r, option_type='call', q=0, tol=1e-6, vol_min=1e-5, vol_max=5.0):
+    """
+    Calculates the implied volatility (IV) of an option using the brentq root-finder.
+
+    This function finds the volatility 'sigma' that makes the Black-Scholes
+    price equal to the 'market_price'.
+
+    Parameters:
+    market_price (float): The observed market price of the option
+    S (float): Current stock price
+    K (float): Option strike price
+    T (float): Time to expiration (in years)
+    r (float): Risk-free interest rate (annual)
+    option_type (str): 'call' or 'put'
+    q (float): Annual dividend yield (default=0)
+    tol (float): Tolerance for the root-finding algorithm
+    vol_min (float): Minimum volatility guess
+    vol_max (float): Maximum volatility guess
+
+    Returns:
+    float: The implied volatility, or np.nan if no solution is found
+    """
+
+    # 1. Define the objective function for the root finder
+    # We need to find 'sigma' where: BSM_price(sigma) - market_price = 0
+    def objective_function(sigma):
+        try:
+            return black_scholes_price(S, K, T, r, sigma, option_type, q) - market_price
+        except (ValueError, ZeroDivisionError):
+            # Return a large value if BSM fails (e.g., sigma=0)
+            return 1e10 
+
+    # 2. Check for arbitrage / price bounds
+    # The price cannot be below its intrinsic value
+    if option_type == 'call':
+        intrinsic_value = max(0.0, S * np.exp(-q * T) - K * np.exp(-r * T))
+    else: # put
+        intrinsic_value = max(0.0, K * np.exp(-r * T) - S * np.exp(-q * T))
+
+    if market_price < intrinsic_value - tol:
+        # Price is below theoretical minimum
+        return np.nan 
+
+    # 3. Check if market price is achievable in the vol range
+    # BSM price increases with volatility (positive vega)
+    try:
+        min_price = black_scholes_price(S, K, T, r, vol_min, option_type, q)
+        max_price = black_scholes_price(S, K, T, r, vol_max, option_type, q)
+    except Exception:
+        return np.nan # Failed to price at bounds
+
+    if market_price < min_price - tol or market_price > max_price + tol:
+        # Price is outside the range of prices for vol_min to vol_max
+        return np.nan
+
+    # 4. Use brentq to find the root (the implied volatility)
+    try:
+        iv = brentq(
+            objective_function, 
+            vol_min,  # Lower bound
+            vol_max,  # Upper bound
+            xtol=tol,
+            rtol=tol
+        )
+        return iv
+    except ValueError:
+        # This catches cases where brentq fails to converge
+        # (e.g., f(a) and f(b) have the same sign, which our checks
+        # should prevent, but it's a good safeguard).
+        return np.nan
+
