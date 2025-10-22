@@ -183,10 +183,11 @@ def main():
 
             if recommended or near_misses:
                 print('\n=== SCAN RESULTS ===')
-                tier1 = [t for t in recommended
-                         if stock_metrics[t].get('tier') == 1]
-                tier2 = [t for t in recommended
-                         if stock_metrics[t].get('tier') == 2]
+                recommended = sorted(
+                    [t for t in recommended if stock_metrics[t].get('tier') == 1 or stock_metrics[t].get('tier') == 2],
+                    key=lambda x: stock_metrics[x].get('actual_to_fair_ratio', 0),
+                    reverse=True
+                )
 
                 if args.list:
                     print('\nTIER 1:', ', '.join(tier1) or 'None')
@@ -194,53 +195,9 @@ def main():
                     print('NEAR MISSES:',
                           ', '.join([t for t, _ in near_misses]) or 'None')
                 else:
-                    print('\nTIER 1 RECOMMENDED TRADES:')
-                    if tier1:
-                        for tick in tier1:
-                            m = stock_metrics[tick]
-                            print(f'\n  {tick}:')
-                            print(f'    Price: ${m["price"]:.2f}')
-                            if 'sigma_baseline_1y' in m:
-                                print(f'    1Y ATM IV (Baseline): {m["sigma_baseline_1y"]:.4f}')
-                            if 'sigma_short_leg_fair' in m:
-                                print(f'    Fair IV (Short Leg): {m["sigma_short_leg_fair"]:.4f}')
-                            if 'sigma_short_leg' in m:
-                                print(f'    Actual IV (Short Leg): {m["sigma_short_leg"]:.4f}')
-                            if 'actual_to_fair_ratio' in m:
-                                print(f'    Actual to Fair Ratio: {m["actual_to_fair_ratio"]:.2f}%')
-                            print(f'    Volume: {m["volume"]:,.0f}')
-                            print(f'    Winrate: {m["win_rate"]:.1f}% '
-                                  f'over the last {m["win_quarters"]} earnings')
-                            print(f'    IV/RV Ratio: {m["iv_rv_ratio"]:.2f}')
-                            print(f'    Term Structure: {m["term_structure"]:.3f}')
-                            if args.iron_fly:
-                                fly = scanner.calculate_iron_fly_strikes(tick)
-                                if 'error' not in fly:
-                                    print('    --------------------')
-                                    print('    IRON FLY STRATEGY:')
-                                    print(f'      Expiration: '
-                                          f'{fly["expiration"]}')
-                                    print(f'      SHORT: '
-                                          f'${fly["short_put_strike"]}P/'
-                                          f'${fly["short_call_strike"]}C '
-                                          f'for ${fly["total_credit"]} '
-                                          'credit')
-                                    print(f'      LONG:  '
-                                          f'${fly["long_put_strike"]}P/'
-                                          f'${fly["long_call_strike"]}C '
-                                          f'for ${fly["total_debit"]} '
-                                          'debit')
-                                    print(f'      Break-evens: '
-                                          f'{fly["lower_breakeven"]}-'
-                                          f'{fly["upper_breakeven"]}, '
-                                          f'Risk/Reward: '
-                                          f'1:{fly["risk_reward_ratio"]}')
-                    else:
-                        print('  None')
-
-                    print('\nTIER 2 RECOMMENDED TRADES:')
-                    if tier2:
-                        for tick in tier2:
+                    print('\nRECOMMENDED TRADES:')
+                    if recommended:
+                        for tick in recommended:
                             m = stock_metrics[tick]
                             print(f'\n  {tick}:')
                             print(f'    Price: ${m["price"]:.2f}')
