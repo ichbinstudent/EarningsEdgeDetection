@@ -1,0 +1,20 @@
+[project]
+name = "trading-bot"
+version = "0.1.0"
+description = "Flexible trading bot manager with Telegram integration"
+requires-python = ">=3.12"
+dependencies = [
+    "selenium>=4.35.0",
+    "webdriver-manager>=4.0.2",
+    "yahooquery>=2.4.1",
+    "python-telegram-bot>=20.0",
+    "apscheduler>=3.10.0",
+    "pytz>=2023.0",
+    "yfinance",
+    "scipy>=1.16.2",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "pyarrow==21.0.0",
+    "websocket-client>=1.7.0",
+    "ib_insync>=0.9.86",
+]
