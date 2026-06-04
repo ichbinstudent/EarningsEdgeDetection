@@ -28,7 +28,7 @@ logger = get_logger("outcomes")
 POLYGON_BASE = "https://api.polygon.io"
 
 
-RATE_LIMIT_SLEEP = float(os.environ.get("POLYGON_RATE_SLEEP", "15"))
+RATE_LIMIT_SLEEP = float(os.environ.get("POLYGON_RATE_SLEEP", "1"))
 
 def _polygon_get(path: str, params: dict) -> Optional[dict]:
     """Make a Polygon API GET request with 429 retry. Returns JSON or None."""
@@ -142,10 +142,12 @@ def compute_outcome(ticker: str, earnings_date_str: str) -> Optional[dict]:
     }
 
 
-def run_outcomes(min_age_days: int = 2, limit: int = 0) -> int:
+def run_outcomes(min_age_days: int = 2, limit: int = 0, max_retries: int = 2) -> int:
     """
     Process pending outcomes. Returns count of outcomes written.
     If limit > 0, process at most that many.
+    After max_retries consecutive "no data" results for a ticker/earnings_date
+    pair, mark it as permanently unavailable.
     """
     conn = get_connection()
     pending = fetch_pending_outcomes(conn, min_age_days=min_age_days)
@@ -174,9 +176,30 @@ def run_outcomes(min_age_days: int = 2, limit: int = 0) -> int:
             )
         else:
             failed += 1
-            logger.info(f"    → no data")
+            # Track how many times this earnings_date has been tried
+            attempt_count = conn.execute(
+                "SELECT outcome_attempt_count FROM snapshots WHERE id = ?",
+                (row["id"],),
+            ).fetchone()[0] or 0
+            attempt_count += 1
 
-        # Polygon rate limit — configurable via POLYGON_RATE_SLEEP (default 15s)
+            if attempt_count >= max_retries:
+                # Mark as permanently unavailable
+                conn.execute(
+                    "UPDATE snapshots SET outcome_fetched_at = 'unavailable', "
+                    "outcome_attempt_count = ? WHERE id = ?",
+                    (attempt_count, row["id"]),
+                )
+                conn.commit()
+                logger.info(f"    → no data (marked unavailable after {attempt_count} attempts)")
+            else:
+                conn.execute(
+                    "UPDATE snapshots SET outcome_attempt_count = ? WHERE id = ?",
+                    (attempt_count, row["id"]),
+                )
+                conn.commit()
+                logger.info(f"    → no data (attempt {attempt_count}/{max_retries})")
+
         time.sleep(RATE_LIMIT_SLEEP)
 
     conn.close()
@@ -189,5 +212,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Post-earnings outcome tracker")
     p.add_argument("--min-age", type=int, default=2, help="Min days past earnings to check")
     p.add_argument("--limit", type=int, default=0, help="Max outcomes to process (0=all)")
+    p.add_argument("--max-retries", type=int, default=2, help="Attempts before marking unavailable")
     args = p.parse_args()
-    run_outcomes(min_age_days=args.min_age, limit=args.limit)
+    run_outcomes(min_age_days=args.min_age, limit=args.limit, max_retries=args.max_retries)
