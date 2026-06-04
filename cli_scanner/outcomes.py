@@ -62,7 +62,7 @@ def get_daily_bars(ticker: str, from_date: str, to_date: str) -> list[dict]:
     """
     data = _polygon_get(
         f"/v2/aggs/ticker/{ticker}/range/1/day/{from_date}/{to_date}",
-        {"adjusted": "true", "sort": "asc", "limit": 10},
+        {"adjusted": "true", "sort": "asc", "limit": 20},
     )
     if not data or data.get("resultsCount", 0) == 0:
         return []
@@ -81,8 +81,9 @@ def compute_outcome(ticker: str, earnings_date_str: str) -> Optional[dict]:
     Returns an outcome dict or None if data unavailable.
     """
     ed = datetime.strptime(earnings_date_str, "%Y-%m-%d").date()
-    # Fetch a window: 3 days before to 3 days after
-    from_d = (ed - timedelta(days=3)).isoformat()
+    # Fetch a wide window: 7 days before (ensures pre-earnings bar even with weekends/holidays)
+    # to 3 days after
+    from_d = (ed - timedelta(days=7)).isoformat()
     to_d = (ed + timedelta(days=3)).isoformat()
 
     bars = get_daily_bars(ticker, from_d, to_d)
