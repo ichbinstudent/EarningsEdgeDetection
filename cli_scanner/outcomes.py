@@ -28,7 +28,7 @@ logger = get_logger("outcomes")
 POLYGON_BASE = "https://api.polygon.io"
 
 
-RATE_LIMIT_SLEEP = float(os.environ.get("POLYGON_RATE_SLEEP", "1"))
+RATE_LIMIT_SLEEP = float(os.environ.get("POLYGON_RATE_SLEEP", "3"))
 
 def _polygon_get(path: str, params: dict) -> Optional[dict]:
     """Make a Polygon API GET request with 429 retry. Returns JSON or None."""
