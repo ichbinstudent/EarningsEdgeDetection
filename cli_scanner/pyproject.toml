@@ -1,11 +1,35 @@
 [project]
-name = "cli-scanner"
-version = "0.1.0"
-description = "Add your description here"
+name = "earnings-edge"
+version = "0.3.0"
+description = "Scanner for high-probability earnings-based options trades & Eurex forward-volatility calendar spreads"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "selenium>=4.35.0",
-    "webdriver-manager>=4.0.2",
-    "yahooquery>=2.4.1",
+    "apscheduler>=3.10",
+    "beautifulsoup4>=4.13",
+    "curl_cffi>=0.10",
+    "numpy>=2.2",
+    "pandas>=2.2",
+    "plotly>=6.8.0",
+    "python-dotenv>=1.0",
+    "python-telegram-bot>=20.0",
+    "pytz>=2024.1",
+    "requests>=2.32",
+    "scikit-learn>=1.5",
+    "scipy>=1.15",
+    "selenium>=4.15",
+    "streamlit>=1.58.0",
+    "tqdm>=4.66",
+    "webdriver-manager>=4.0",
+    "websocket-client>=1.7",
+    "yfinance>=0.2.54",
 ]
+
+[project.optional-dependencies]
+dolthub = ["mysql-connector-python>=8.2"]
+yahooquery = ["yahooquery>=2.4"]
+ib = ["ib_insync>=0.9.86"]
+
+[project.scripts]
+earnings-edge = "scanner:main"
+trading-bot = "bot:main"

@@ -1,0 +1,143 @@
+{
+  "features": [
+    "price",
+    "avg_volume_30d",
+    "has_options",
+    "days_to_expiry",
+    "total_open_interest",
+    "atm_iv_near",
+    "rv30",
+    "iv30_rv30",
+    "hist_vol_3m",
+    "term_slope",
+    "term_structure_valid",
+    "expected_move_pct",
+    "expected_move_dollars",
+    "straddle_price",
+    "atm_call_delta",
+    "atm_put_delta",
+    "atm_call_iv",
+    "atm_put_iv",
+    "sigma_baseline_1y",
+    "sigma_short_leg",
+    "sigma_short_leg_fair",
+    "actual_to_fair_ratio",
+    "strike",
+    "near_entry",
+    "far_entry",
+    "net_debit",
+    "moneyness",
+    "abs_moneyness_error",
+    "debit_pct_price",
+    "near_far_entry_ratio",
+    "entry_width_days"
+  ],
+  "target": "min_pnl",
+  "score_kind": "probability",
+  "min_pnl": 10.0,
+  "min_return": 0.1,
+  "data_quality": {
+    "raw_rows": 521,
+    "raw_pnl": -6880.000000000006,
+    "rejected_rows": 59,
+    "rejected_bad_moneyness": 23,
+    "rejected_non_positive_debit": 28,
+    "rejected_negative_exit_value": 33,
+    "clean_rows": 462,
+    "clean_pnl": -1589.0000000000025,
+    "clean_win_rate": 0.3961038961038961,
+    "iv_rv_filter": {
+      "min_iv_rv": 1.5,
+      "before": 462,
+      "after": 267
+    }
+  },
+  "trained_at": "2026-06-11T20:34:02.697701+00:00",
+  "rows": 267,
+  "positive_rate": 0.40823970037453183,
+  "target_mean": 0.40823970037453183,
+  "holdout_start": "2025-09-01",
+  "holdout_metric_name": "auc",
+  "holdout_metric": 0.6034356725146199,
+  "holdout_mae": null,
+  "holdout_auc": 0.6034356725146199,
+  "holdout_results": [
+    {
+      "name": "baseline_all",
+      "n": 112,
+      "coverage": 1.0,
+      "pnl": 5437.000000000002,
+      "avg_pnl": 48.544642857142875,
+      "median_pnl": 0.0,
+      "win_rate": 0.3482142857142857,
+      "avg_return_on_debit": 0.04003239882380431
+    },
+    {
+      "name": "manual_debit_le_2",
+      "n": 53,
+      "coverage": 0.4732142857142857,
+      "pnl": 80.00000000000003,
+      "avg_pnl": 1.5094339622641515,
+      "median_pnl": 0.0,
+      "win_rate": 0.16981132075471697,
+      "avg_return_on_debit": 0.01177139307091521
+    },
+    {
+      "name": "manual_debit_0.25_to_1.50",
+      "n": 30,
+      "coverage": 0.26785714285714285,
+      "pnl": -4.0000000000000595,
+      "avg_pnl": -0.13333333333333533,
+      "median_pnl": 0.0,
+      "win_rate": 0.2,
+      "avg_return_on_debit": -0.026034831211153544
+    },
+    {
+      "name": "model_top_25pct",
+      "n": 28,
+      "coverage": 0.25,
+      "pnl": 538.0000000000002,
+      "avg_pnl": 19.214285714285722,
+      "median_pnl": 0.0,
+      "win_rate": 0.39285714285714285,
+      "avg_return_on_debit": 0.06938145181951223
+    },
+    {
+      "name": "model_top_50pct",
+      "n": 56,
+      "coverage": 0.5,
+      "pnl": -292.0000000000001,
+      "avg_pnl": -5.214285714285716,
+      "median_pnl": 0.0,
+      "win_rate": 0.4107142857142857,
+      "avg_return_on_debit": 0.030904162045361543
+    },
+    {
+      "name": "model_p_ge_0.55",
+      "n": 19,
+      "coverage": 0.16964285714285715,
+      "pnl": 175.9999999999999,
+      "avg_pnl": 9.263157894736835,
+      "median_pnl": 0.0,
+      "win_rate": 0.3684210526315789,
+      "avg_return_on_debit": 0.010256235069883683
+    },
+    {
+      "name": "model_p_ge_0.60",
+      "n": 12,
+      "coverage": 0.10714285714285714,
+      "pnl": -131.0000000000002,
+      "avg_pnl": -10.916666666666684,
+      "median_pnl": -5.0,
+      "win_rate": 0.16666666666666666,
+      "avg_return_on_debit": -0.06929511645771481
+    }
+  ],
+  "time_series_cv_top50": {
+    "folds": 4,
+    "selected_n": 108,
+    "pnl": 2119.000000000001,
+    "avg_pnl": 19.620370370370377,
+    "avg_coverage": 0.5094339622641509
+  }
+}

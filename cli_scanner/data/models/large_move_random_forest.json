@@ -1,0 +1,62 @@
+{
+  "features": [
+    "price",
+    "avg_volume_30d",
+    "market_cap",
+    "has_options",
+    "days_to_expiry",
+    "total_open_interest",
+    "atm_iv_near",
+    "rv30",
+    "iv30_rv30",
+    "hist_vol_3m",
+    "term_slope",
+    "term_structure_valid",
+    "expected_move_pct",
+    "expected_move_dollars",
+    "straddle_price",
+    "atm_call_delta",
+    "atm_put_delta",
+    "atm_call_iv",
+    "atm_put_iv",
+    "sigma_baseline_1y",
+    "sigma_short_leg",
+    "sigma_short_leg_fair",
+    "actual_to_fair_ratio",
+    "mc_win_rate",
+    "mc_quarters"
+  ],
+  "target": "large_move",
+  "model_type": "random_forest",
+  "trained_at": "2026-05-24T21:22:23.969325",
+  "rows": 247,
+  "positive_rate": 0.16194331983805668,
+  "auc": 0.6076923076923076,
+  "classification_report": {
+    "0": {
+      "precision": 0.8545454545454545,
+      "recall": 0.9038461538461539,
+      "f1-score": 0.8785046728971962,
+      "support": 52.0
+    },
+    "1": {
+      "precision": 0.2857142857142857,
+      "recall": 0.2,
+      "f1-score": 0.23529411764705882,
+      "support": 10.0
+    },
+    "accuracy": 0.7903225806451613,
+    "macro avg": {
+      "precision": 0.57012987012987,
+      "recall": 0.551923076923077,
+      "f1-score": 0.5568993952721275,
+      "support": 62.0
+    },
+    "weighted avg": {
+      "precision": 0.7627984918307499,
+      "recall": 0.7903225806451613,
+      "f1-score": 0.7747610349536257,
+      "support": 62.0
+    }
+  }
+}

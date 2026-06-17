@@ -1,0 +1,129 @@
+{
+  "features": [
+    "price",
+    "avg_volume_30d",
+    "has_options",
+    "days_to_expiry",
+    "atm_iv_near",
+    "rv30",
+    "iv30_rv30",
+    "hist_vol_3m",
+    "term_slope",
+    "term_structure_valid",
+    "expected_move_pct",
+    "expected_move_dollars",
+    "straddle_price",
+    "atm_call_delta",
+    "atm_put_delta",
+    "atm_call_iv",
+    "atm_put_iv",
+    "sigma_short_leg",
+    "strike",
+    "near_entry",
+    "far_entry",
+    "net_debit",
+    "moneyness",
+    "abs_moneyness_error",
+    "debit_pct_price",
+    "near_far_entry_ratio",
+    "entry_width_days"
+  ],
+  "target": "min_pnl",
+  "min_pnl": 10.0,
+  "min_return": 0.1,
+  "data_quality": {
+    "raw_rows": 247,
+    "raw_pnl": -13070.999999999996,
+    "rejected_rows": 5,
+    "rejected_bad_moneyness": 1,
+    "rejected_non_positive_debit": 1,
+    "rejected_negative_exit_value": 4,
+    "clean_rows": 242,
+    "clean_pnl": 2610.0,
+    "clean_win_rate": 0.6157024793388429
+  },
+  "trained_at": "2026-05-25T12:24:41.558158+00:00",
+  "rows": 242,
+  "positive_rate": 0.4297520661157025,
+  "holdout_start": "2025-07-01",
+  "holdout_auc": 0.5722591362126246,
+  "holdout_results": [
+    {
+      "name": "baseline_all",
+      "n": 99,
+      "coverage": 1.0,
+      "pnl": 2029.9999999999998,
+      "avg_pnl": 20.5050505050505,
+      "median_pnl": 4.0000000000000036,
+      "win_rate": 0.5858585858585859,
+      "avg_return_on_debit": 0.19027150666505332
+    },
+    {
+      "name": "manual_debit_le_2",
+      "n": 77,
+      "coverage": 0.7777777777777778,
+      "pnl": 1340.0000000000002,
+      "avg_pnl": 17.402597402597404,
+      "median_pnl": 4.999999999999893,
+      "win_rate": 0.6233766233766234,
+      "avg_return_on_debit": 0.22391823134156047
+    },
+    {
+      "name": "manual_debit_0.25_to_1.50",
+      "n": 61,
+      "coverage": 0.6161616161616161,
+      "pnl": 975.0000000000001,
+      "avg_pnl": 15.983606557377051,
+      "median_pnl": 8.000000000000096,
+      "win_rate": 0.639344262295082,
+      "avg_return_on_debit": 0.1934191014533862
+    },
+    {
+      "name": "model_top_25pct",
+      "n": 25,
+      "coverage": 0.25252525252525254,
+      "pnl": 302.0000000000001,
+      "avg_pnl": 12.080000000000005,
+      "median_pnl": 8.999999999999986,
+      "win_rate": 0.64,
+      "avg_return_on_debit": 0.22679659150383621
+    },
+    {
+      "name": "model_top_50pct",
+      "n": 50,
+      "coverage": 0.5050505050505051,
+      "pnl": 1437.0,
+      "avg_pnl": 28.74,
+      "median_pnl": 8.50000000000004,
+      "win_rate": 0.6,
+      "avg_return_on_debit": 0.2548876078642225
+    },
+    {
+      "name": "model_p_ge_0.55",
+      "n": 39,
+      "coverage": 0.3939393939393939,
+      "pnl": -112.00000000000004,
+      "avg_pnl": -2.8717948717948727,
+      "median_pnl": 4.000000000000092,
+      "win_rate": 0.5897435897435898,
+      "avg_return_on_debit": 0.1341107473863408
+    },
+    {
+      "name": "model_p_ge_0.60",
+      "n": 26,
+      "coverage": 0.26262626262626265,
+      "pnl": 312.0000000000001,
+      "avg_pnl": 12.000000000000004,
+      "median_pnl": 9.499999999999975,
+      "win_rate": 0.6538461538461539,
+      "avg_return_on_debit": 0.22092264852576846
+    }
+  ],
+  "time_series_cv_top50": {
+    "folds": 4,
+    "selected_n": 96,
+    "pnl": 1582.9999999999998,
+    "avg_pnl": 16.489583333333332,
+    "avg_coverage": 0.5
+  }
+}

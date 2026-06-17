@@ -1,13 +1,21 @@
+# Core
 beautifulsoup4>=4.13.3
+curl_cffi>=0.10.0
 numpy>=2.2.3
 pandas>=2.2.3
+python-dotenv>=1.0.0
+pytz>=2024.1
 requests>=2.32.3
 scipy>=1.15.2
-yfinance>=0.2.54
-selenium>=4.15.2
-pytz>=2024.1
 tqdm>=4.66.2
-yahooquery>=2.3.7
+yfinance>=0.2.54
+
+# Selenium (Market Chameleon scraping)
+selenium>=4.15.2
 webdriver-manager>=4.0.0
-mysql-connector-python>=8.2.0
-curl_cffi==0.10.0
+
+# Optional: DoltHub integration
+# mysql-connector-python>=8.2.0
+
+# Optional: Yahooquery (not used in current codebase)
+# yahooquery>=2.3.7
