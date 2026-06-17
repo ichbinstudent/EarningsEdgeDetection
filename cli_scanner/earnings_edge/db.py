@@ -210,15 +210,38 @@ CREATE TABLE IF NOT EXISTS scanner_scan_outputs (
 
 CREATE INDEX IF NOT EXISTS idx_scan_output_scan ON scanner_scan_outputs(scan_timestamp);
 CREATE INDEX IF NOT EXISTS idx_scan_output_ticker_date ON scanner_scan_outputs(ticker, earnings_date);
+
+CREATE TABLE IF NOT EXISTS scan_runs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_timestamp  TEXT NOT NULL,
+    scanner_name    TEXT NOT NULL,
+    trigger_type    TEXT NOT NULL,  -- 'scheduled', 'manual', 'cron'
+    candidate_count INTEGER DEFAULT 0,
+    tier1_count     INTEGER DEFAULT 0,
+    tier2_count     INTEGER DEFAULT 0,
+    take_count      INTEGER DEFAULT 0,
+    duration_secs   REAL,
+    success         INTEGER DEFAULT 0,
+    error_message   TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+);
 """
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    """Return a connection to the ML database, creating it if needed."""
+    """Return a connection to the ML database, creating it if needed.
+
+    Enables WAL mode for concurrent read/write and sets a busy timeout
+    to avoid ``database is locked`` errors during scans.
+    """
     path = db_path or DEFAULT_DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
+    conn = sqlite3.connect(str(path), timeout=30)
     conn.row_factory = sqlite3.Row
+    # Performance: WAL mode allows concurrent readers during writes
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")  # 30s
+    conn.execute("PRAGMA synchronous=NORMAL")   # WAL-safe, faster
     conn.executescript(_SCHEMA)
     _migrate_snapshots(conn)
     _migrate_live_calendar_candidates(conn)
@@ -230,6 +253,7 @@ def _migrate_snapshots(conn: sqlite3.Connection) -> None:
     existing = {r['name'] for r in conn.execute('pragma table_info(snapshots)')}
     migrations = {
         'outcome_attempt_count': 'INTEGER DEFAULT 0',
+        'data_source': 'TEXT DEFAULT "unknown"',
     }
     for col, col_type in migrations.items():
         if col not in existing:
@@ -289,6 +313,7 @@ def insert_snapshot(conn: sqlite3.Connection, row: dict) -> int:
         "recommendation",
         "mc_win_rate", "mc_quarters",
         "collection_error",
+        "data_source",
     ]
     placeholders = ", ".join(f":{c}" for c in cols)
     sql = f"INSERT INTO snapshots ({', '.join(cols)}) VALUES ({placeholders})"
@@ -381,3 +406,17 @@ def update_outcome(conn: sqlite3.Connection, snapshot_id: int, outcome: dict) ->
         {**outcome, "id": snapshot_id},
     )
     conn.commit()
+
+
+def insert_scan_run(conn: sqlite3.Connection, row: dict) -> int:
+    """Insert a scan-run audit row and return its id."""
+    cols = [
+        "scan_timestamp", "scanner_name", "trigger_type",
+        "candidate_count", "tier1_count", "tier2_count", "take_count",
+        "duration_secs", "success", "error_message",
+    ]
+    placeholders = ", ".join(f":{c}" for c in cols)
+    sql = f"INSERT INTO scan_runs ({', '.join(cols)}) VALUES ({placeholders})"
+    cur = conn.execute(sql, {c: row.get(c) for c in cols})
+    conn.commit()
+    return cur.lastrowid or 0
