@@ -1245,12 +1245,13 @@ class EarningsScanner:
                         try:
                             result = future.result(timeout=60)  # Add timeout to prevent hanging threads
                             
+                            # Always save metrics for all stocks
+                            stock_metrics[ticker] = result['metrics']
+                            
                             if result['pass']:
                                 recommended.append(ticker)
-                                stock_metrics[ticker] = result['metrics']
-                            elif result['near_miss']:
+                            elif result.get('near_miss', False):
                                 near_misses.append((ticker, result['reason']))
-                                stock_metrics[ticker] = result['metrics']
                         except Exception as e:
                             logger.error(f"Error processing {ticker}: {e}")
                         finally:
@@ -1268,12 +1269,13 @@ class EarningsScanner:
                         result = self.validate_stock(stock, earnings_date)
                         ticker = stock['ticker']
                         
+                        # Always save metrics for all stocks
+                        stock_metrics[ticker] = result['metrics']
+                        
                         if result['pass']:
                             recommended.append(ticker)
-                            stock_metrics[ticker] = result['metrics']
-                        elif result['near_miss']:
+                        elif result.get('near_miss', False):
                             near_misses.append((ticker, result['reason']))
-                            stock_metrics[ticker] = result['metrics']
                         pbar.update(1)
                     
                     if batch != batches[-1]:

@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from utils.logging_utils import setup_logging
 from core.scanner import EarningsScanner
 from utils.discord_webhook import send_webhook
+from utils.database import ScannerDatabase
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -82,6 +83,9 @@ def main():
     setup_logging(log_dir="logs")
     logger = logging.getLogger(__name__)
     
+    # Initialize database
+    db = ScannerDatabase()
+    
     input_date = None
     if args.date:
         try:
@@ -151,6 +155,7 @@ def main():
                 else:
                     print(f'  {k}: {v}')
 
+        iron_fly_data = None
         if args.iron_fly:
             print("\nIRON FLY STRATEGY:")
             iron_fly = scanner.calculate_iron_fly_strikes(ticker)
@@ -167,6 +172,14 @@ def main():
                 print(f'  Break-evens: {iron_fly["lower_breakeven"]}-'
                       f'{iron_fly["upper_breakeven"]}, '
                       f'Risk/Reward: 1:{iron_fly["risk_reward_ratio"]}')
+                iron_fly_data = iron_fly
+        
+        # Save analyze result to database
+        try:
+            db.save_analyze_result(ticker, metrics, iron_fly_data)
+        except Exception as e:
+            logger.error(f"Error saving analyze result to database: {e}")
+        
         return
         
 
@@ -188,6 +201,10 @@ def main():
                     key=lambda x: stock_metrics[x].get('actual_to_fair_ratio', 0),
                     reverse=True
                 )
+
+                # Split recommended into tiers for display
+                tier1 = [t for t in recommended if stock_metrics[t].get('tier') == 1]
+                tier2 = [t for t in recommended if stock_metrics[t].get('tier') == 2]
 
                 if args.list:
                     print('\nTIER 1:', ', '.join(tier1) or 'None')
@@ -341,7 +358,27 @@ def main():
                     }
                     send_webhook(args.webhook, embed, logger)
             
-            else:
+            # Save scan results to database (always save, even if no recommendations)
+            try:
+                iron_fly_data = {}
+                if args.iron_fly and recommended:
+                    # Collect iron fly data for all recommended stocks
+                    for tick in recommended:
+                        fly = scanner.calculate_iron_fly_strikes(tick)
+                        if 'error' not in fly:
+                            iron_fly_data[tick] = fly
+                
+                db.save_scan_results(
+                    recommended=recommended,
+                    near_misses=near_misses,
+                    stock_metrics=stock_metrics,
+                    input_date=input_date,
+                    iron_fly_data=iron_fly_data if args.iron_fly else None
+                )
+            except Exception as e:
+                logger.error(f"Error saving scan results to database: {e}")
+            
+            if not recommended and not near_misses:
                 logger.info('No recommended stocks found')
 
             if args.forever and args.forever > 0:
