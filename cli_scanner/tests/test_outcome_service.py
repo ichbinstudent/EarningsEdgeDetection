@@ -230,5 +230,52 @@ class TestRunOutcomes(unittest.TestCase):
         self.assertEqual(stats["updated"], 2)
 
 
+class TestRunLiveCandidateOutcomes(unittest.TestCase):
+    """Ensures :meth:`OutcomeService.run_live_candidate_outcomes` works end-to-end."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.db_path = Path(self.tmpdir) / "test.db"
+        # live_calendar_candidates row needs scan_timestamp + earnings_date + ticker
+        self.ed = (date.today() - timedelta(days=10)).isoformat()
+
+    def _insert_candidate(self, ticker: str = "AAPL") -> int:
+        conn = get_connection(self.db_path)
+        try:
+            cur = conn.execute(
+                "INSERT INTO live_calendar_candidates "
+                "(scan_timestamp, ticker, earnings_date) "
+                "VALUES (?, ?, ?)",
+                ("2026-06-30T19:15:00Z", ticker, self.ed),
+            )
+            conn.commit()
+            return cur.lastrowid or 0
+        finally:
+            conn.close()
+
+    def test_updates_live_candidate_when_bars_available(self):
+        cid = self._insert_candidate("AAPL")
+        ed = datetime.strptime(self.ed, "%Y-%m-%d").date()
+        bars = [
+            _bar(ed - timedelta(days=1), c=100.0, h=101.0, l=99.0),
+            _bar(ed, c=110.0, h=112.0, l=108.0),
+        ]
+        service = OutcomeService(polygon_client=FakePolygon(bars), db_path=self.db_path)
+
+        stats = service.run_live_candidate_outcomes(min_age_days=2)
+        self.assertEqual(stats["updated"], 1)
+        self.assertEqual(stats["failed"], 0)
+
+        conn = get_connection(self.db_path)
+        row = conn.execute(
+            "SELECT actual_move_pct, actual_move_direction "
+            "FROM live_calendar_candidates WHERE id = ?",
+            (cid,),
+        ).fetchone()
+        conn.close()
+        self.assertAlmostEqual(row["actual_move_pct"], 10.0, places=1)
+        self.assertEqual(row["actual_move_direction"], "UP")
+
+
 if __name__ == "__main__":
     unittest.main()

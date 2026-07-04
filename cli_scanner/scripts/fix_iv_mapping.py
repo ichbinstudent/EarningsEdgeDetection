@@ -1,7 +1,7 @@
 """Quick fix: copy sigma_short_leg -> atm_iv_near for rows where they match."""
 import sqlite3
 
-conn = sqlite3.connect("data/earnings_ml.db")
+conn = sqlite3.connect(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "earnings_ml.db"))
 
 # Step 1: Copy sigma_short_leg to atm_iv_near (they're identical)
 cur = conn.execute("""

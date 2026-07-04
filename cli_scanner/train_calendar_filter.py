@@ -357,8 +357,27 @@ def main() -> None:
     parser.add_argument("--min-rows", type=int, default=100)
     parser.add_argument("--cv-splits", type=int, default=4)
     parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument(
+        "--deploy",
+        action="store_true",
+        help="Copy trained artifact to the bot's default model path",
+    )
     args = parser.parse_args()
-    print(json.dumps(train(args), indent=2))
+    meta = train(args)
+
+    if args.deploy:
+        bot_default = (
+            args.output.parent / "calendar_call_filter_ridge_allfeatures.joblib"
+        )
+        import shutil
+
+        shutil.copy2(args.output, bot_default)
+        shutil.copy2(
+            args.output.with_suffix(".json"),
+            bot_default.with_suffix(".json"),
+        )
+        meta["deployed_to"] = str(bot_default)
+        print(json.dumps(meta, indent=2))
 
 
 if __name__ == "__main__":

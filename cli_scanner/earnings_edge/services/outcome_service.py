@@ -5,6 +5,9 @@ with :class:`earnings_edge.collectors.polygon.PolygonClient`, which enforces a
 sliding-window rate limit internally (5 calls / 62s). The bar→outcome math is
 kept in a pure helper (:meth:`OutcomeService.outcome_from_bars`) so it can be
 unit-tested without any network dependency.
+
+Also tracks stock-move outcomes for :class:`live_calendar_candidates` and
+:class:`scanner_scan_outputs`.
 """
 
 from __future__ import annotations
@@ -15,8 +18,11 @@ from typing import Any, Optional
 
 from earnings_edge.collectors.polygon import PolygonClient
 from earnings_edge.db import (
+    fetch_pending_live_candidates,
     fetch_pending_outcomes,
     get_connection,
+    record_live_candidate_failure,
+    update_live_candidate_move,
     update_outcome,
 )
 
@@ -220,3 +226,63 @@ class OutcomeService:
                 "    → no data (attempt %d/%d)", attempt_count, max_retries
             )
         conn.commit()
+
+    # -- live_calendar_candidates outcomes ---------------------------------
+
+    def run_live_candidate_outcomes(
+        self,
+        min_age_days: int = 2,
+        limit: int = 0,
+        max_retries: int = 2,
+    ) -> dict[str, int]:
+        """Process live_calendar_candidates missing a stock-move outcome.
+
+        Returns ``updated``, ``failed``, ``processed`` counts.
+        """
+        updated = 0
+        failed = 0
+        conn = get_connection(self._db_path)
+        try:
+            pending = fetch_pending_live_candidates(
+                conn, min_age_days=min_age_days
+            )
+            logger.info(
+                "%d pending live-candidate outcomes to fetch%s",
+                len(pending),
+                f" (processing up to {limit})" if limit else "",
+            )
+            if limit > 0:
+                pending = pending[:limit]
+
+            for row in pending:
+                ticker = row["ticker"]
+                ed = row["earnings_date"]
+                cid = row["id"]
+                logger.info("  live_can %s id=%d (%s)", ticker, cid, ed)
+
+                outcome = self.compute_outcome(ticker, ed)
+                if outcome:
+                    update_live_candidate_move(conn, cid, outcome)
+                    updated += 1
+                    logger.info(
+                        "    → %s %.2f%% (max range %.2f%%)",
+                        outcome["actual_move_direction"],
+                        outcome["actual_move_pct"],
+                        outcome["max_intraday_range_pct"],
+                    )
+                else:
+                    failed += 1
+                    record_live_candidate_failure(conn, cid, max_retries)
+
+            logger.info(
+                "Live-candidate outcomes: %d updated, %d no data",
+                updated,
+                failed,
+            )
+        finally:
+            conn.close()
+        return {
+            "updated": updated,
+            "failed": failed,
+            "processed": updated + failed,
+        }

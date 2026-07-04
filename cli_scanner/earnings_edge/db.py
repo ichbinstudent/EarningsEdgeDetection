@@ -228,6 +228,20 @@ CREATE TABLE IF NOT EXISTS scan_runs (
 """
 
 
+def _create_indexes(conn: sqlite3.Connection) -> None:
+    """Create indexes after migrations complete (columns must exist first)."""
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_snap_dedup "
+        "ON snapshots(ticker, earnings_date, scan_date, timing, data_source);"
+    )
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Connection
+# ---------------------------------------------------------------------------
+
+
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Return a connection to the ML database, creating it if needed.
 
@@ -245,6 +259,7 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn.executescript(_SCHEMA)
     _migrate_snapshots(conn)
     _migrate_live_calendar_candidates(conn)
+    _create_indexes(conn)
     return conn
 
 
@@ -292,6 +307,13 @@ def _migrate_live_calendar_candidates(conn: sqlite3.Connection) -> None:
         'atm_put_iv': 'REAL',
         'win_rate': 'REAL',
         'win_quarters': 'INTEGER',
+        # Stock-move outcome columns (filled by outcomes.py alongside exit_value/pnl)
+        'pre_earnings_close': 'REAL',
+        'post_earnings_close': 'REAL',
+        'actual_move_pct': 'REAL',
+        'actual_move_direction': 'TEXT',
+        'max_intraday_range_pct': 'REAL',
+        'outcome_attempt_count': 'INTEGER DEFAULT 0',
     }
     for col, col_type in needed.items():
         if col not in existing:
@@ -316,9 +338,11 @@ def insert_snapshot(conn: sqlite3.Connection, row: dict) -> int:
         "data_source",
     ]
     placeholders = ", ".join(f":{c}" for c in cols)
-    sql = f"INSERT INTO snapshots ({', '.join(cols)}) VALUES ({placeholders})"
+    sql = f"INSERT OR IGNORE INTO snapshots ({', '.join(cols)}) VALUES ({placeholders})"
     cur = conn.execute(sql, {c: row.get(c) for c in cols})
     conn.commit()
+    if cur.rowcount == 0:
+        logger.debug("Skipping duplicate snapshot for %s @ %s", row.get("ticker"), row.get("scan_date"))
     return cur.lastrowid or 0
 
 
@@ -337,6 +361,72 @@ def fetch_pending_outcomes(conn: sqlite3.Connection, min_age_days: int = 2) -> L
         (cutoff, age_cutoff),
     ).fetchall()
     return rows
+
+
+def fetch_pending_live_candidates(
+    conn: sqlite3.Connection, min_age_days: int = 2
+) -> List[sqlite3.Row]:
+    """Return live_calendar_candidates needing a stock-move outcome."""
+    from datetime import timedelta
+    age_cutoff = (date.today() - timedelta(days=min_age_days)).isoformat()
+
+    rows = conn.execute(
+        "SELECT * FROM live_calendar_candidates "
+        "WHERE outcome_fetched_at IS NULL "
+        "  AND earnings_date IS NOT NULL "
+        "  AND earnings_date <= ? "
+        "ORDER BY earnings_date",
+        (age_cutoff,),
+    ).fetchall()
+    return rows
+
+
+def update_live_candidate_move(
+    conn: sqlite3.Connection, cid: int, outcome: dict
+) -> None:
+    """Write a stock-move outcome row to a live_calendar_candidates row."""
+    conn.execute(
+        """UPDATE live_calendar_candidates SET
+            pre_earnings_close = :pre_earnings_close,
+            post_earnings_close = :post_earnings_close,
+            actual_move_pct = :actual_move_pct,
+            actual_move_direction = :actual_move_direction,
+            max_intraday_range_pct = :max_intraday_range_pct,
+            outcome_fetched_at = :outcome_fetched_at
+        WHERE id = :id""",
+        {**outcome, "id": cid},
+    )
+    conn.commit()
+
+
+def record_live_candidate_failure(
+    conn: sqlite3.Connection, cid: int, max_retries: int
+) -> None:
+    """Bump_attempt_count; mark unavailable once retries are exhausted."""
+    attempt_count = (
+        conn.execute(
+            "SELECT outcome_attempt_count FROM live_calendar_candidates WHERE id = ?",
+            (cid,),
+        ).fetchone()[0]
+        or 0
+    )
+    attempt_count += 1
+    if attempt_count >= max_retries:
+        conn.execute(
+            "UPDATE live_calendar_candidates "
+            "SET outcome_fetched_at = 'unavailable', "
+            "outcome_attempt_count = ? "
+            "WHERE id = ?",
+            (attempt_count, cid),
+        )
+    else:
+        conn.execute(
+            "UPDATE live_calendar_candidates "
+            "SET outcome_attempt_count = ? "
+            "WHERE id = ?",
+            (attempt_count, cid),
+        )
+    conn.commit()
 
 
 def insert_live_calendar_candidate(conn: sqlite3.Connection, row: dict) -> int:

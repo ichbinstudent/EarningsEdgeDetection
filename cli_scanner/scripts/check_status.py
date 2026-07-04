@@ -1,5 +1,5 @@
 import sqlite3
-conn = sqlite3.connect("data/earnings_ml.db")
+conn = sqlite3.connect(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "earnings_ml.db"))
 total = conn.execute("SELECT COUNT(*) FROM snapshots WHERE scan_date >= '2026-05-01' AND has_options = 1").fetchone()[0]
 iv_null = conn.execute("SELECT COUNT(*) FROM snapshots WHERE scan_date >= '2026-05-01' AND has_options = 1 AND atm_iv_near IS NULL").fetchone()[0]
 rv_null = conn.execute("SELECT COUNT(*) FROM snapshots WHERE scan_date >= '2026-05-01' AND has_options = 1 AND rv30 IS NULL").fetchone()[0]

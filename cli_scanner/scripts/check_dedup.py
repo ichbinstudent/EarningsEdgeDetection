@@ -1,5 +1,5 @@
 import sqlite3
-conn = sqlite3.connect("data/earnings_ml.db")
+conn = sqlite3.connect(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "earnings_ml.db"))
 
 # How many unique (ticker, scan_date) pairs?
 pairs = conn.execute("""
