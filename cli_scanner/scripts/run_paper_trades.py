@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Run paper-trading strategies for today's earnings and submit Alpaca orders.
-
-This is the production entry point for automatic execution.
+"""
+Production paper-trading entry point — LIVE orders submitted directly to Alpaca paper API.
 
 Usage:
-    python scripts/run_paper_trades.py --dry-run
-    python scripts/run_paper_trades.py --notify-telegram
     python scripts/run_paper_trades.py --strategies short_straddle vol_risk_premium
+    python scripts/run_paper_trades.py --notify 2565658666
 """
 from __future__ import annotations
 
@@ -60,7 +58,7 @@ def format_summary(summary: dict) -> str:
     lines = [
         f"📊 *Paper Trade Execution* — {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
         f"Buying Power: ${summary.get('buying_power', 0):,.2f}",
-        f"Dry Run: {'YES' if summary.get('dry_run') else 'LIVE'}",
+        "Mode: LIVE",
         "",
     ]
 
@@ -92,7 +90,7 @@ def format_summary(summary: dict) -> str:
 
     lines.append("")
     lines.append(f"Total submitted: {total_submitted}")
-    if not summary.get("dry_run") and total_submitted > 0:
+    if total_submitted > 0:
         lines.append("⚠️ LIVE ORDERS SUBMITTED — monitor fills")
 
     return "\n".join(lines)
@@ -101,7 +99,6 @@ def format_summary(summary: dict) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run paper-trading strategies")
     parser.add_argument("--strategies", nargs="*", default=None, help="Strategies to run (default: BEST_STRATEGIES)")
-    parser.add_argument("--dry-run", action="store_true", help="Run without submitting real orders")
     parser.add_argument("--notify", default=None, help="Telegram chat ID to send notification to")
     parser.add_argument("--output", default=None, help="Write JSON output to file")
     parser.add_argument("--db", default=None, help="Path to earnings_ml.db")
@@ -111,14 +108,16 @@ def main() -> int:
 
     strategies = args.strategies or BEST_STRATEGIES
 
-    logger.info("Paper trading run: strategies=%s, dry_run=%s", strategies, args.dry_run)
+    logger.info("Paper trading run: strategies=%s", strategies)
 
     summary = run_auto_trade(
         strategies=strategies,
-        dry_run=args.dry_run,
         db_path=args.db,
         api_key=args.api_key,
         api_secret=args.api_secret,
+        max_per_ticker=5000,
+        min_buying_power=10000,
+        max_orders=20,
     )
 
     # Print formatted summary
@@ -134,7 +133,7 @@ def main() -> int:
     if args.notify:
         send_telegram_notification(args.notify, output_text)
 
-    if summary.get("total_submitted", 0) > 0 and not args.dry_run:
+    if summary.get("total_submitted", 0) > 0:
         logger.warning("%d LIVE orders submitted", summary["total_submitted"])
         return 2  # signal: live orders placed
 

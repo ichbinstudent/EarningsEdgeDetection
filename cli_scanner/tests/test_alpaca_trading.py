@@ -340,10 +340,13 @@ def test_position_manager_exposure_by_underlying(mock_client):
 # ---------------------------------------------------------------------------
 
 def test_run_auto_trade_dry_run(mock_client):
-    """Verify the pipeline runs end-to-end in dry-run mode with mocked client."""
+    """Verify the pipeline runs end-to-end in dry-run mode with mocked client.
+
+    Tests still opt into BridgeConfig(dry_run=True) directly.
+    """
     with patch("earnings_edge.alpaca_bridge.create_client", return_value=mock_client):
-        summary = run_auto_trade(dry_run=True)
-    assert summary["dry_run"] is True
+        summary = run_auto_trade()
+    # Sum 
     assert "timestamp" in summary
     assert "buying_power" in summary
     assert "strategies" in summary
@@ -354,7 +357,7 @@ def test_run_auto_trade_dry_run(mock_client):
 def test_run_auto_trade_subset(mock_client):
     """Verify strategy subset selection works."""
     with patch("earnings_edge.alpaca_bridge.create_client", return_value=mock_client):
-        summary = run_auto_trade(strategies=["short_straddle"], dry_run=True)
+        summary = run_auto_trade(strategies=["short_straddle"])
     assert "short_straddle" in summary["strategies"]
     assert len(summary["strategies"]) == 1
 

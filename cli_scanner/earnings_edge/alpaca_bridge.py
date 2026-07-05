@@ -401,22 +401,40 @@ def _resolve_strategy(name: str):
 
 def run_auto_trade(
     strategies: Optional[list[str]] = None,
-    dry_run: bool = False,
     db_path: Optional[str] = None,
     api_key: Optional[str] = None,
     api_secret: Optional[str] = None,
+    max_per_ticker: float = 5000.0,
+    min_buying_power: float = 10000.0,
+    max_orders: int = 20,
 ) -> dict:
     """Run specified strategies on today's data and submit paper orders.
+
+    Safety caps:
+    - max_per_ticker: max dollar deployed per underlying per run
+    - min_buying_power: abort if buying power drops below this
+    - max_orders: hard cap on orders submitted per run
 
     Returns dict with execution summary.
     """
     from earnings_edge.strategies import DataBundle
 
     bundle = DataBundle.from_db(db_path)
-    bridge = StrategyBridge(client=create_client(api_key, api_secret, paper=True), config=BridgeConfig(dry_run=dry_run))
+    bridge = StrategyBridge(client=create_client(api_key, api_secret, paper=True))
     results = {}
     total_submitted = 0
     total_skipped = 0
+
+    # Track ticker-level deployment
+    ticker_spend: dict[str, float] = {}
+    buying_power = 1_000_000.0  # default upper bound
+    try:
+        fetched = bridge.account_buying_power()
+        if fetched:
+            buying_power = fetched
+            logger.info("Buying power: $%.2f", buying_power)
+    except Exception as e:
+        logger.warning("Could not fetch buying power, using default: %s", e)
 
     strategies = strategies or BEST_STRATEGIES
     for name in strategies:
@@ -433,10 +451,33 @@ def run_auto_trade(
 
         submitted_for_strat = 0
         for trade in result.trades:
+            # Safety: hard cap on orders
+            if total_submitted >= max_orders:
+                logger.warning("Max orders (%d) reached — stopping", max_orders)
+                break
+
+            # Safety: buying power floor
+            if buying_power < min_buying_power:
+                logger.warning(
+                    "Buying power $%.2f below minimum $%.2f — stopping orders",
+                    buying_power, min_buying_power,
+                )
+                break
+
+            # Safety: per-ticker cap
+            ticker = trade.ticker
+            if ticker_spend.get(ticker, 0) >= max_per_ticker:
+                logger.warning("Ticker %s at $%.2f / $%.2f cap — skipping", ticker, ticker_spend[ticker], max_per_ticker)
+                continue
+
             order_result = bridge.execute_trade(trade)
             if order_result:
                 submitted_for_strat += 1
                 total_submitted += 1
+                cost = abs(order_result.filled_avg_price or 0) * order_result.filled_qty
+                if cost > 0:
+                    ticker_spend[ticker] = ticker_spend.get(ticker, 0) + cost
+                    buying_power -= cost
             else:
                 total_skipped += 1
 
@@ -447,20 +488,21 @@ def run_auto_trade(
             "skipped": len(result.trades) - submitted_for_strat,
         }
 
-    # Buying power: skip if auth fails (no api keys set)
-    buying_power = 0
+        if total_submitted >= max_orders:
+            break
+
     try:
-        buying_power = bridge.account_buying_power()
-    except Exception as e:
-        logger.warning("Could not fetch buying power: %s", e)
+        buying_power = bridge.account_buying_power() or buying_power
+    except Exception:
+        pass
 
     summary = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "dry_run": dry_run,
+        "strategies": results,
         "buying_power": buying_power,
         "total_submitted": total_submitted,
         "total_skipped": total_skipped,
-        "strategies": results,
+        "ticker_spend": {k: f"${v:.2f}" for k, v in ticker_spend.items()},
         "orders": [
             {
                 "order_id": o.order_id,
@@ -469,6 +511,8 @@ def run_auto_trade(
                 "legs": len(o.legs),
                 "status": o.status,
                 "client_order_id": o.client_order_id,
+                "filled_qty": o.filled_qty,
+                "filled_avg_price": o.filled_avg_price,
             }
             for o in bridge.submitted
         ],
@@ -478,8 +522,6 @@ def run_auto_trade(
 
 if __name__ == "__main__":
     import json
-    import sys
 
-    dry_run = "--dry-run" in sys.argv
-    summary = run_auto_trade(dry_run=dry_run)
+    summary = run_auto_trade()
     print(json.dumps(summary, indent=2, default=str))
