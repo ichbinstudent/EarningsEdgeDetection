@@ -2,16 +2,25 @@
 Non-calendar positional option strategies.
 
 Unlike calendar-call strategies that sell a near and buy a far leg,
-these strategies take outright directional or volatility positions:
+these strategies take outright directional or volatility positions,
+plus multi-strike structures priced from snapshot ATM IV:
 
-  1. ShortStraddle   — sell premium when IV/RV is elevated and model predicts
-                       small post-earnings move (overpriced vol).
-  2. LongStraddle    — buy premium when model predicts large move that implied
-                       vol has underpriced.
+  Single-leg (IV/RV based):
+  1. ShortStraddle   — sell premium when IV/RV is elevated, model predicts
+                        small post-earnings move.
+  2. LongStraddle    — buy premium when IV/RV is low, model predicts big move.
   3. DirectionalCall — buy calls on bullish model signal + magnitude filter.
   4. DirectionalPut  — buy puts on bearish model signal + magnitude filter.
-  5. VolRiskPremium  — structural short vol when IV/RV is extreme; model
-                       provides magnitude confirmation.
+  5. VolRiskPremium  — structural short vol when IV/RV is extreme.
+
+  Multi-strike (Black-Scholes priced from snapshot ATM IV):
+  6. IronCondorShort  — sell iron condor when IV/RV is high, expected move
+                         close to predicted move (stock stays inside wings).
+  7. ButterflyLong     — long butterfly when IV compression expected; max
+                         payoff if earnings move is within body width.
+  8. RiskReversalSkew  — skew arbitrage: buy OTM call, sell OTM put when term
+                         structure is inverted (backwardated). PnL from
+                         direction + vega expansion.
 """
 from __future__ import annotations
 
