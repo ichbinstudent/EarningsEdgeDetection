@@ -153,6 +153,46 @@ CREATE INDEX IF NOT EXISTS idx_live_calendar_scan ON live_calendar_candidates(sc
 CREATE INDEX IF NOT EXISTS idx_live_calendar_ticker_date ON live_calendar_candidates(ticker, earnings_date);
 CREATE INDEX IF NOT EXISTS idx_live_calendar_outcome ON live_calendar_candidates(outcome_fetched_at);
 
+-- ---------------------------------------------------------------------------
+-- Options chain (Alpaca daily snapshots + bars backfill)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS options_chain (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    collector_run_id        TEXT,
+    ticker                  TEXT NOT NULL,
+    scan_date               TEXT NOT NULL,
+    contract_ticker         TEXT NOT NULL,
+    underlying              TEXT,
+    expiry                  TEXT,
+    strike                  REAL,
+    contract_type           TEXT,
+    style                   TEXT,
+    bid                     REAL,
+    ask                     REAL,
+    bid_size                INTEGER,
+    ask_size                INTEGER,
+    midpoint                REAL,
+    close                   REAL,
+    open_price              REAL,
+    high                    REAL,
+    low                     REAL,
+    trade_count             INTEGER,
+    volume                  INTEGER,
+    vwap                    REAL,
+    implied_volatility      REAL,
+    delta                   REAL,
+    gamma                   REAL,
+    theta                   REAL,
+    vega                    REAL,
+    created_at              TEXT DEFAULT (datetime('now')),
+    UNIQUE(contract_ticker, scan_date, close)
+);
+
+CREATE INDEX IF NOT EXISTS idx_chain_underlying ON options_chain(underlying);
+CREATE INDEX IF NOT EXISTS idx_chain_scan_date ON options_chain(scan_date);
+CREATE INDEX IF NOT EXISTS idx_chain_ticker_date ON options_chain(ticker, scan_date);
+
 CREATE TABLE IF NOT EXISTS scanner_scan_outputs (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_timestamp          TEXT NOT NULL,
@@ -480,6 +520,43 @@ def insert_scanner_output(conn: sqlite3.Connection, row: dict) -> int:
     cur = conn.execute(sql, {c: row.get(c) for c in cols})
     conn.commit()
     return cur.lastrowid or 0
+
+
+def insert_options_chain_rows(conn: sqlite3.Connection, rows: list[dict]) -> int:
+    """Bulk-insert Alpaca options-chain snapshot rows.
+
+    Uses INSERT OR IGNORE so re-running on the same contracts skipping duplicates.
+    Returns number of rows actually inserted.
+    """
+    if not rows:
+        return 0
+    cols = [
+        "collector_run_id", "ticker", "scan_date", "contract_ticker",
+        "underlying", "expiry", "strike", "contract_type", "style",
+        "bid", "ask", "bid_size", "ask_size", "midpoint",
+        "close", "open_price", "high", "low",
+        "trade_count", "volume", "vwap",
+        "implied_volatility", "delta", "gamma", "theta", "vega",
+    ]
+    placeholders = ", ".join(f":{c}" for c in cols)
+    sql = f"INSERT OR IGNORE INTO options_chain ({', '.join(cols)}) VALUES ({placeholders})"
+    cur = conn.executemany(sql, [{c: r.get(c) for c in cols} for r in rows])
+    conn.commit()
+    return cur.rowcount or 0
+
+
+def fetch_chain_for_ticker(conn: sqlite3.Connection, ticker: str,
+                            scan_date: str) -> list[sqlite3.Row]:
+    """Return all options_chain rows for one ticker/scan_date."""
+    return conn.execute(
+        "SELECT * FROM options_chain WHERE ticker = ? AND scan_date = ?",
+        (ticker, scan_date),
+    ).fetchall()
+
+
+def fetch_chain_for_ticker_date(date: str) -> list[sqlite3.Row]:
+    """Return all options_chain rows with expiry on or after ``date``."""
+    return []  # placeholder — kept for type-checker parity with other fetch funcs
 
 
 def update_outcome(conn: sqlite3.Connection, snapshot_id: int, outcome: dict) -> None:

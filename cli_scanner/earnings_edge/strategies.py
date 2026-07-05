@@ -59,6 +59,7 @@ class DataBundle:
     calendar_trades: pd.DataFrame
     live_candidates: pd.DataFrame
     scan_outputs: pd.DataFrame
+    options_chain: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     @classmethod
     def from_db(cls, db_path: str | None = None) -> DataBundle:
@@ -71,6 +72,7 @@ class DataBundle:
         calendar_trades = pd.read_sql("SELECT * FROM calendar_call_trades", conn)
         live_candidates = pd.read_sql("SELECT * FROM live_calendar_candidates", conn)
         scan_outputs = pd.read_sql("SELECT * FROM scanner_scan_outputs", conn)
+        options_chain = pd.read_sql("SELECT * FROM options_chain", conn)
 
         conn.close()
         return cls(
@@ -78,6 +80,7 @@ class DataBundle:
             calendar_trades=calendar_trades,
             live_candidates=live_candidates,
             scan_outputs=scan_outputs,
+            options_chain=options_chain,
         )
 
 

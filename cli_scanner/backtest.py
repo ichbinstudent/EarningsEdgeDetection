@@ -29,6 +29,7 @@ from earnings_edge.strategies import (
 from earnings_edge.positional_strategies import (
     run_positional as run_positional_family,
 )
+from earnings_edge.multi_strike_real import run_multi_strike
 
 
 def run_all(data: DataBundle, strategies: list[str] | None = None) -> dict[str, StrategyResult]:
@@ -70,16 +71,19 @@ def main() -> int:
     parser.add_argument("--db", default=None, help="Path to earnings_ml.db")
     parser.add_argument("--strategies", nargs="*", default=None, help="Subset of strategies to run")
     parser.add_argument("--positional", action="store_true", help="Include non-calendar positional strategies")
-    parser.add_argument("--all", action="store_true", help="Run both calendar and positional families")
+    parser.add_argument("--multi-strike", action="store_true", help="Include multi-strike (iron condor/butterfly/risk reversal)")
+    parser.add_argument("--all", action="store_true", help="Run all three strategy families")
     parser.add_argument("--output", default=None, help="Write JSON report to file")
     args = parser.parse_args()
 
     if args.all:
         args.positional = True
+        args.multi_strike = True
 
     data = DataBundle.from_db(args.db)
     print(f"Loaded {len(data.snapshots)} snapshots, {len(data.calendar_trades)} calendar trades, "
-          f"{len(data.live_candidates)} live candidates, {len(data.scan_outputs)} scan outputs\n")
+          f"{len(data.live_candidates)} live candidates, {len(data.scan_outputs)} scan outputs, "
+          f"{len(data.options_chain)} chain rows\n")
 
     results = run_all(data, args.strategies)
     print_report(results, "Calendar Call Family")
@@ -88,6 +92,12 @@ def main() -> int:
         pos_results = run_positional_family(data, args.strategies)
         print_report(pos_results, "Positional Family")
         for k, v in pos_results.items():
+            results[k] = v
+
+    if args.multi_strike:
+        ms_results = run_multi_strike(data, args.strategies)
+        print_report(ms_results, "Multi-Strike Family")
+        for k, v in ms_results.items():
             results[k] = v
 
     if args.output:
