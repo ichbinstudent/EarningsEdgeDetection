@@ -1,0 +1,27 @@
+{
+  "model_name": "option_model_direction_gradient_boosting",
+  "target": "direction",
+  "model_type": "gradient_boosting",
+  "features": [
+    "price",
+    "avg_volume_30d",
+    "atm_iv_near",
+    "rv30",
+    "iv30_rv30",
+    "hist_vol_3m",
+    "sigma_baseline_1y",
+    "sigma_short_leg",
+    "sigma_short_leg_fair",
+    "actual_to_fair_ratio",
+    "term_slope",
+    "term_structure_valid"
+  ],
+  "train_size": 1262,
+  "test_size": 542,
+  "metrics": {
+    "accuracy": 0.4446494464944649,
+    "f1_macro": 0.38544235196452253
+  },
+  "target_mean": -0.02383592017738359,
+  "target_std": 0.9106341006778078
+}
