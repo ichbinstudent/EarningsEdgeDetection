@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from earnings_edge.alpaca_trading import (
@@ -108,6 +108,10 @@ class StrategyBridge:
                     len(legs),
                     trade.side,
                 )
+                # Dry-run: append OCC symbols without API lookup
+                for leg in legs:
+                    if not leg.get("symbol"):
+                        leg["symbol"] = self._occ_symbol(trade.ticker, leg["expiry"], leg["strike"], leg["option_type"])
                 return OrderResult(
                     order_id="dry-run",
                     client_order_id=client_order_id,
@@ -281,7 +285,11 @@ class StrategyBridge:
 
         Alpaca uses non-standard symbol roots (e.g., `AA` not `AAPL`), so we
         must query /options/contracts to get the actual `symbol` used for orders.
+
+        Skip in dry-run mode (no API access needed).
         """
+        if self.config.dry_run:
+            return None
         expiry_min = (expiry - timedelta(days=2)).isoformat()
         expiry_max = (expiry + timedelta(days=2)).isoformat()
         contracts_resp = self.client.get_option_contracts(
@@ -373,19 +381,39 @@ BEST_STRATEGIES = [
 ]
 
 
+def _resolve_strategy(name: str):
+    """Try calendar strategy registry first, then positional strategies.
+
+    Calendar strategies: instances with .run(data) → StrategyResult
+    Positional strategies: classes registered in POSITIONAL_STRATEGIES
+    """
+    try:
+        from earnings_edge.strategies import get_strategy
+        return get_strategy(name)
+    except KeyError:
+        pass
+    from earnings_edge.positional_strategies import POSITIONAL_STRATEGIES
+    if name in POSITIONAL_STRATEGIES:
+        cls = POSITIONAL_STRATEGIES[name]
+        return cls()
+    raise KeyError(f"Strategy {name} not found in any registry")
+
+
 def run_auto_trade(
     strategies: Optional[list[str]] = None,
     dry_run: bool = False,
     db_path: Optional[str] = None,
+    api_key: Optional[str] = None,
+    api_secret: Optional[str] = None,
 ) -> dict:
     """Run specified strategies on today's data and submit paper orders.
 
     Returns dict with execution summary.
     """
-    from earnings_edge.strategies import DataBundle, list_strategies, get_strategy
+    from earnings_edge.strategies import DataBundle
 
     bundle = DataBundle.from_db(db_path)
-    bridge = StrategyBridge(config=BridgeConfig(dry_run=dry_run))
+    bridge = StrategyBridge(client=create_client(api_key, api_secret, paper=True), config=BridgeConfig(dry_run=dry_run))
     results = {}
     total_submitted = 0
     total_skipped = 0
@@ -393,7 +421,7 @@ def run_auto_trade(
     strategies = strategies or BEST_STRATEGIES
     for name in strategies:
         try:
-            strategy = get_strategy(name)
+            strategy = _resolve_strategy(name)
         except KeyError:
             logger.warning("Strategy %s not found in registry", name)
             continue
@@ -419,10 +447,17 @@ def run_auto_trade(
             "skipped": len(result.trades) - submitted_for_strat,
         }
 
+    # Buying power: skip if auth fails (no api keys set)
+    buying_power = 0
+    try:
+        buying_power = bridge.account_buying_power()
+    except Exception as e:
+        logger.warning("Could not fetch buying power: %s", e)
+
     summary = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "dry_run": dry_run,
-        "buying_power": bridge.account_buying_power(),
+        "buying_power": buying_power,
         "total_submitted": total_submitted,
         "total_skipped": total_skipped,
         "strategies": results,
