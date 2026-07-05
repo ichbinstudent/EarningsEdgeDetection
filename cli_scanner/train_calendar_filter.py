@@ -221,16 +221,15 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         random_state=args.random_state,
     )
 
-    # Proper time holdout: train old events, test future events.
-    cut = pd.Timestamp(args.holdout_start)
-    train_mask = clean["earnings_date"] < cut
-    test_mask = clean["earnings_date"] >= cut
-    train_df = clean[train_mask]
-    test_df = clean[test_mask]
+    # Time-order split: first ``train_fraction`` by date → train, rest → test.
+    # Preserves temporal ordering (no future leakage).
+    train_end_idx = int(len(clean) * args.train_fraction)
+    train_df = clean.iloc[:train_end_idx]
+    test_df = clean.iloc[train_end_idx:]
     if len(train_df) < 30 or len(test_df) < 20:
         raise RuntimeError(
             f"Holdout split too small: train={len(train_df)}, test={len(test_df)}. "
-            "Adjust --holdout-start."
+            "Adjust --train-fraction."
         )
 
     pipe.fit(train_df[features].apply(pd.to_numeric, errors="coerce"), train_df["target"])
@@ -319,15 +318,15 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "rows": int(len(clean)),
         "positive_rate": None if regression else float(y.mean()),
         "target_mean": float(y.mean()),
-        "holdout_start": args.holdout_start,
-        "holdout_metric_name": holdout_metric_name,
         "holdout_metric": None if holdout_metric is None else float(holdout_metric),
+        "holdout_metric_name": holdout_metric_name,
         "holdout_mae": None if holdout_mae is None else float(holdout_mae),
-        "holdout_auc": None if regression or holdout_metric is None else float(holdout_metric),
         "holdout_results": holdout_results,
         "time_series_cv_top50": cv_summary,
+        "train_fraction": args.train_fraction,
+        "train_rows": int(len(train_df)),
+        "test_rows": int(len(test_df)),
     }
-    args.output.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(artifact, args.output)
     meta_path = args.output.with_suffix(".json")
     meta = {k: v for k, v in artifact.items() if k != "pipeline"}
@@ -351,9 +350,10 @@ def main() -> None:
     )
     parser.add_argument("--min-pnl", type=float, default=10.0)
     parser.add_argument("--min-return", type=float, default=0.10)
-    parser.add_argument("--holdout-start", default="2025-07-01")
     parser.add_argument("--max-moneyness-error", type=float, default=0.20)
     parser.add_argument("--min-iv-rv", type=float, default=None, help="Minimum IV/RV ratio to include in training data")
+    parser.add_argument("--train-fraction", type=float, default=0.70,
+                        help="Fraction of earliest-era rows for training (rest is holdout)")
     parser.add_argument("--min-rows", type=int, default=100)
     parser.add_argument("--cv-splits", type=int, default=4)
     parser.add_argument("--random-state", type=int, default=42)
